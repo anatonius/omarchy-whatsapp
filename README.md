@@ -31,8 +31,12 @@ the same time.
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/srineshr1/omarchy-whatsapp.git --enable --yes
+omarchy plugin add https://github.com/anatonius/omarchy-whatsapp.git --enable --yes
 ```
+
+This is a hardened fork of
+[srineshr1/omarchy-whatsapp](https://github.com/srineshr1/omarchy-whatsapp);
+see [Changes in this fork](#changes-in-this-fork).
 
 That is enough. The first time the widget starts it installs Node deps, the
 `omarchy-whatsapp` user service, and CLI links. Click the icon and press Login.
@@ -40,10 +44,26 @@ That is enough. The first time the widget starts it installs Node deps, the
 From a source checkout instead:
 
 ```sh
-git clone https://github.com/srineshr1/omarchy-whatsapp.git
+git clone https://github.com/anatonius/omarchy-whatsapp.git
 cd omarchy-whatsapp
 ./install.sh
 ```
+
+## Changes in this fork
+
+- **Local data retention.** Cached messages and downloaded media expire after
+  30 days by default and are pruned at startup and daily. See
+  [Privacy and local data](#privacy-and-local-data) for the
+  `OMARCHY_WHATSAPP_MESSAGE_TTL_DAYS`, `OMARCHY_WHATSAPP_MEDIA_TTL_DAYS`,
+  `OMARCHY_WHATSAPP_PERSIST_MESSAGES` and
+  `OMARCHY_WHATSAPP_HIDE_NOTIFICATION_BODIES` options.
+- **Narrower dependency install.** The global `allow-git=all` npm setting is
+  gone. `libsignal` is a direct dependency pinned to a commit, and setup uses
+  `allow-git=root`, so only that root-declared git dependency may be fetched.
+- **Safer notification titles.** A contact name starting with `-` can no longer
+  be read as an option by the notification helper.
+- **Archived chats are hidden.** Archived chats no longer appear in the chat
+  list or any tab; they still do not alert or count as unread.
 
 Requirements: Omarchy 4 (Quattro) and Node.js 20+. If Node lives in a version
 manager (mise, proto, fnm, volta, nvm) setup finds it and pins the path into
