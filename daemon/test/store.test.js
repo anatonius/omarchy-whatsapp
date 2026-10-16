@@ -41,6 +41,22 @@ test('unread total excludes muted and archived chats but includes expired mutes'
   assert.equal(store.totalUnread(), 18)
 })
 
+test('chat list omits archived chats but retains their stored state', () => {
+  const store = makeStore()
+  const archivedJid = 'archived@s.whatsapp.net'
+  const activeJid = 'active@s.whatsapp.net'
+  const archived = store.chat(archivedJid)
+  archived.lastTs = 2
+  archived.lastText = 'archived message'
+  archived.archived = true
+  const active = store.chat(activeJid)
+  active.lastTs = 1
+  active.lastText = 'active message'
+
+  assert.deepEqual(store.chatList().map((chat) => chat.jid), [activeJid])
+  assert.equal(store.chat(archivedJid).lastText, 'archived message')
+})
+
 test('alias merge preserves an active mute from the secondary chat', () => {
   const store = makeStore()
   const lid = store.chat('123@lid')

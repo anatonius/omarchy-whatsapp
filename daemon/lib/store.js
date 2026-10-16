@@ -559,7 +559,10 @@ export class Store {
 
   chatList(limit = 40) {
     const membership = this._membership()
-    return this.sortedChats().slice(0, Math.max(1, limit)).map((chat) => this._decorate(chat, membership))
+    return this.sortedChats()
+      .filter((chat) => chat.archived !== true)
+      .slice(0, Math.max(1, limit))
+      .map((chat) => this._decorate(chat, membership))
   }
 
   /** Replace pins, favourites, and lists with a fresh app-state scan. */
