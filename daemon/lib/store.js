@@ -3,10 +3,14 @@ import { storeFile } from './paths.js'
 import { logger } from './logger.js'
 import { isGroupJid, isIgnorableChat, prettyJid } from './message.js'
 import { mergeMutePreferences, shouldNotifyChat } from './preferences.js'
+import { retentionDays } from './retention.js'
 
 const MAX_MESSAGES_PER_CHAT = 200
 const MAX_CHATS = 300
 const PERSIST_DEBOUNCE_MS = 2000
+const MESSAGE_TTL_DAYS = retentionDays('OMARCHY_WHATSAPP_MESSAGE_TTL_DAYS', 30)
+const MESSAGE_TTL_SECONDS = MESSAGE_TTL_DAYS * 24 * 60 * 60
+const PERSIST_MESSAGES = process.env.OMARCHY_WHATSAPP_PERSIST_MESSAGES !== '0'
 
 export function normalizeJid(jid) {
   if (!jid) return ''
@@ -95,8 +99,10 @@ export class Store {
     try {
       const data = JSON.parse(raw)
       for (const chat of data.chats || []) if (chat?.jid) this.chats.set(chat.jid, chat)
-      for (const [jid, list] of Object.entries(data.messages || {})) {
-        if (Array.isArray(list)) this.messages.set(jid, list.slice(-MAX_MESSAGES_PER_CHAT))
+      if (PERSIST_MESSAGES) {
+        for (const [jid, list] of Object.entries(data.messages || {})) {
+          if (Array.isArray(list)) this.messages.set(jid, list.slice(-MAX_MESSAGES_PER_CHAT))
+        }
       }
       for (const [jid, name] of Object.entries(data.names || {})) this.names.set(jid, name)
       for (const key of data.addressBookKeys || []) this.addressBookKeys.add(key)
@@ -124,6 +130,16 @@ export class Store {
           chat.name = prettyJid(chat.jid)
         }
       }
+      if (!PERSIST_MESSAGES) {
+        for (const chat of this.chats.values()) {
+          chat.lastText = ''
+          chat.lastSender = ''
+        }
+        this._dirty = true
+        this.persist()
+      } else if (this.pruneExpiredMessages()) {
+        this.markDirty()
+      }
       logger.info({ chats: this.chats.size, names: this.names.size }, 'store: snapshot loaded')
     } catch (err) {
       logger.warn({ err }, 'store: corrupt snapshot, starting empty')
@@ -144,10 +160,13 @@ export class Store {
     if (!this._dirty) return
     this._dirty = false
     const chats = this.sortedChats().slice(0, MAX_CHATS)
+      .map((chat) => PERSIST_MESSAGES ? chat : { ...chat, lastText: '', lastSender: '' })
     const messages = {}
-    for (const chat of chats) {
-      const list = this.messages.get(chat.jid)
-      if (list?.length) messages[chat.jid] = list.slice(-MAX_MESSAGES_PER_CHAT)
+    if (PERSIST_MESSAGES) {
+      for (const chat of chats) {
+        const list = this.messages.get(chat.jid)
+        if (list?.length) messages[chat.jid] = list.slice(-MAX_MESSAGES_PER_CHAT)
+      }
     }
     const payload = {
       version: 2,
@@ -169,6 +188,33 @@ export class Store {
     } catch (err) {
       logger.warn({ err }, 'store: snapshot write failed')
     }
+  }
+
+  pruneExpiredMessages(now = Date.now()) {
+    if (MESSAGE_TTL_DAYS === 0) return false
+    const cutoff = Math.floor(now / 1000) - MESSAGE_TTL_SECONDS
+    let changed = false
+
+    for (const [jid, list] of this.messages) {
+      const fresh = list.filter((message) => {
+        const ts = Number(message.ts)
+        return !Number.isFinite(ts) || ts <= 0 || ts >= cutoff
+      })
+      if (fresh.length !== list.length) {
+        this.messages.set(jid, fresh)
+        changed = true
+      }
+    }
+
+    for (const chat of this.chats.values()) {
+      if (chat.lastTs && chat.lastTs < cutoff && (chat.lastText || chat.lastSender)) {
+        chat.lastText = ''
+        chat.lastSender = ''
+        changed = true
+      }
+    }
+
+    return changed
   }
 
   rememberName(jid, name, isAddressBook = false) {

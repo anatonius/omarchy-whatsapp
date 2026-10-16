@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildNotifyArgs } from '../lib/notify.js'
+import { buildNotifyArgs, Notifier } from '../lib/notify.js'
 
 const JID = "5551234@s.whatsapp.net"
 
@@ -24,8 +24,27 @@ test('spells the click command as separate argv words', () => {
 
 test('a headline that looks like a flag stays a positional', () => {
   const args = buildNotifyArgs({ title: '--exec', body: 'hi', jid: null, useOmarchy: true })
-  assert.equal(args.at(-2), '--exec')
+  assert.equal(args.at(-2), '\u2060--exec')
   assert.equal(args.at(-1), 'hi')
+})
+
+test('a headline beginning with a dash cannot be parsed as a helper option', () => {
+  const args = buildNotifyArgs({ title: '-x', body: 'hi', jid: JID, useOmarchy: false })
+  assert.equal(args.at(-2), '\u2060-x')
+})
+
+test('hidden notification bodies are replaced before spawning the helper', () => {
+  const notifier = new Notifier()
+  notifier.enabled = true
+  notifier.hideBodies = true
+  let sent
+  notifier.send = (...args) => { sent = args }
+  notifier.playSound = () => {}
+
+  notifier.queue({ jid: JID, title: 'Ada', body: 'private message', shouldNotify: () => true })
+  notifier.flush(JID)
+
+  assert.equal(sent[1], 'New message')
 })
 
 test('omits --exec entirely when there is no chat to open', () => {

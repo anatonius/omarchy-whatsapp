@@ -69,12 +69,11 @@ wa_ensure_deps() {
   # --no-bin-links keeps the plugin folder free of symlinks, which Omarchy's
   # plugin validation rejects.
   #
-  # npm 12 defaults allow-git to none; baileys@6.7.24 pulls libsignal from
-  # git. Fetch that public repo over HTTPS so a missing GitHub SSH key
-  # cannot fail the clone (the lockfile used to record git+ssh).
+  # npm 12 defaults allow-git to none. libsignal is declared directly so
+  # allow-git=root permits only this lockfile-pinned git dependency.
   (cd "$WA_DAEMON_DIR" &&
     PATH="$(dirname "$node"):$PATH" \
-    npm_config_allow_git="${npm_config_allow_git:-all}" \
+    npm_config_allow_git=root \
     GIT_CONFIG_COUNT=2 \
     GIT_CONFIG_KEY_0='url.https://github.com/.insteadOf' \
     GIT_CONFIG_VALUE_0='ssh://git@github.com/' \

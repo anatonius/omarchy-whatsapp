@@ -155,19 +155,32 @@ Move the widget:
 omarchy bar move io.github.ricky.whatsapp --section right
 ```
 
-## What it stores, and where
+## Privacy and local data
 
 | Path | Contents |
 |------|----------|
 | `~/.local/state/omarchy-whatsapp/auth/` | Linked-device credentials and Signal keys (`0700`) |
-| `~/.local/state/omarchy-whatsapp/store.json` | Recent chats and up to 200 messages per chat (`0600`) |
+| `~/.local/state/omarchy-whatsapp/store.json` | Chat metadata and, by default, up to 200 messages per chat (`0600`) |
+| `$XDG_CACHE_HOME/omarchy-whatsapp/media/` (default: `~/.cache/omarchy-whatsapp/media/`) | Downloaded images and stickers from chats opened in the bar |
 | `$XDG_RUNTIME_DIR/omarchy-whatsapp.sock` | Control socket (`0600`, cleared on logout) |
 
-Nothing leaves your machine except traffic to WhatsApp itself. Media is never
-downloaded — photos and voice notes show as `📷 Photo`, `🎤 Voice message`, and
-so on. Open the full client for the real thing.
+Message history and media cache files expire after 30 days by default, and are
+also bounded by the per-chat message limit. Set
+`OMARCHY_WHATSAPP_MESSAGE_TTL_DAYS` or `OMARCHY_WHATSAPP_MEDIA_TTL_DAYS` in the
+user service to change either retention period; `0` disables expiry for that
+cache. Set `OMARCHY_WHATSAPP_PERSIST_MESSAGES=0` to keep messages only in
+daemon memory and remove stored message history and previews on startup. Set
+`OMARCHY_WHATSAPP_HIDE_NOTIFICATION_BODIES=1` to show a generic “New message”
+body instead of message text in desktop notifications.
 
-`omarchy-whatsapp logout` unlinks the device and deletes all three.
+Images and stickers are downloaded only for chats opened in the bar; voice
+notes and other media show as `🎤 Voice message` and similar placeholders. The
+daemon communicates with WhatsApp and the local notification helper. When
+notification bodies are visible, the helper receives them as command-line
+arguments, which may be observable to other local processes.
+
+`omarchy-whatsapp logout` unlinks the device and deletes credentials, message
+history, and cached media.
 
 Disabling the bar widget with `omarchy plugin disable io.github.ricky.whatsapp`
 also stops and disables the WhatsApp user service. Linked-device credentials
@@ -210,8 +223,9 @@ interpreter: `systemctl --user edit omarchy-whatsapp` and add
 
 The first start installs daemon dependencies from the lockfile.
 `baileys@6.7.24` pulls `libsignal` from GitHub, and npm 12 refuses git
-dependencies unless `allow-git` is set. Setup now opts in for this
-project and clones over HTTPS, so a GitHub SSH key is not required.
+dependencies unless `allow-git` is set. Setup allows only root-declared git
+dependencies; the lockfile pins `libsignal` to a specific commit and fetches
+over HTTPS, so a GitHub SSH key is not required.
 Update the plugin if you installed before that fix — an older lockfile
 recorded `git+ssh`. `git` must be on `PATH` (it is, if you installed
 with `omarchy plugin add`).

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "baileys": "6.7.24",
+    "libsignal": "git+https://github.com/whiskeysockets/libsignal-node.git#bcea72df9ec34d9d9140ab30619cf479c7c144c7",
     "pino": "10.3.1",
     "qrcode": "1.5.4"
   }

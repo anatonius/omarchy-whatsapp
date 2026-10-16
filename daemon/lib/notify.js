@@ -34,14 +34,17 @@ const soundFile = [
 // passed any earlier the script reaches the headline while still in option
 // position and exits 1, losing the toast while the sound still plays.
 export function buildNotifyArgs({ title, body, jid, useOmarchy: omarchy }) {
+  const normalizedTitle = String(title ?? '')
+  // Keep leading-dash contact names positional without changing visible text.
+  const safeTitle = normalizedTitle.startsWith('-') ? `\u2060${normalizedTitle}` : normalizedTitle
   if (!omarchy) {
-    return ['-a', 'WhatsApp', '-u', 'normal', `--hint=string:omarchy-glyph:${GLYPH}`, title, body]
+    return ['-a', 'WhatsApp', '-u', 'normal', `--hint=string:omarchy-glyph:${GLYPH}`, safeTitle, body]
   }
   return [
     '--app-name', 'WhatsApp',
     '-u', 'normal',
     '-g', GLYPH,
-    title,
+    safeTitle,
     body,
     // Clicking the toast opens the bar panel on the originating chat.
     ...(jid ? ['--exec', 'bash', focusPath, jid] : [])
@@ -51,6 +54,7 @@ export function buildNotifyArgs({ title, body, jid, useOmarchy: omarchy }) {
 export class Notifier {
   constructor() {
     this.enabled = canNotify && process.env.OMARCHY_WHATSAPP_NO_NOTIFY !== '1'
+    this.hideBodies = process.env.OMARCHY_WHATSAPP_HIDE_NOTIFICATION_BODIES === '1'
     /** @type {Map<string, {title: string, lines: string[], timer: NodeJS.Timeout}>} */
     this.pending = new Map()
     if (!canNotify) logger.warn('notify: no notify-send on PATH, notifications disabled')
@@ -85,7 +89,7 @@ export class Notifier {
     const body = entry.lines.length > 1
       ? `${entry.lines[entry.lines.length - 1]}\n(+${entry.lines.length - 1} more)`
       : entry.lines[0]
-    this.send(entry.title, body, jid)
+    this.send(entry.title, this.hideBodies ? 'New message' : body, jid)
     this.playSound()
   }
 

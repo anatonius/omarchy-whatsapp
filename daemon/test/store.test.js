@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -8,7 +8,7 @@ const stateHome = mkdtempSync(join(tmpdir(), 'omarchy-whatsapp-test-'))
 process.env.XDG_STATE_HOME = stateHome
 process.env.OMARCHY_WHATSAPP_LOG_LEVEL = 'silent'
 
-const { ensureDirs } = await import('../lib/paths.js')
+const { ensureDirs, storeFile } = await import('../lib/paths.js')
 const { Store } = await import('../lib/store.js')
 ensureDirs()
 
@@ -159,4 +159,47 @@ test('does not retry incoming or non-text messages without original content', ()
 
   assert.equal(store.retryMessage({ remoteJid: jid, id: 'incoming' }), undefined)
   assert.equal(store.retryMessage({ remoteJid: jid, id: 'photo' }), undefined)
+})
+
+test('prunes expired messages and chat previews', () => {
+  const store = makeStore()
+  const jid = '5218111111111@s.whatsapp.net'
+  const now = Date.now()
+
+  store.upsertMessage(jid, { id: 'expired', ts: Math.floor(now / 1000) - 45 * 86400, text: 'old' })
+  store.upsertMessage(jid, { id: 'recent', ts: Math.floor(now / 1000) - 86400, text: 'recent' })
+  const chat = store.chat(jid)
+  chat.lastTs = Math.floor(now / 1000) - 45 * 86400
+  chat.lastText = 'old preview'
+  chat.lastSender = 'Old sender'
+
+  assert.equal(store.pruneExpiredMessages(now), true)
+  assert.deepEqual(store.messageList(jid).map((message) => message.id), ['recent'])
+  assert.equal(chat.lastText, '')
+  assert.equal(chat.lastSender, '')
+})
+
+test('load prunes expired messages and rewrites the snapshot', () => {
+  const jid = '5218111111111@s.whatsapp.net'
+  const now = Math.floor(Date.now() / 1000)
+  const oldTs = now - 45 * 86400
+  writeFileSync(storeFile, JSON.stringify({
+    chats: [{ jid, name: 'Chat', lastTs: oldTs, lastText: 'old preview', lastSender: 'Old sender' }],
+    messages: {
+      [jid]: [
+        { id: 'expired', ts: oldTs, text: 'expired body' },
+        { id: 'recent', ts: now - 86400, text: 'recent body' }
+      ]
+    }
+  }))
+
+  const store = makeStore()
+  store.load()
+  assert.deepEqual(store.messageList(jid).map((message) => message.id), ['recent'])
+  assert.equal(store.chat(jid).lastText, '')
+  store.persist()
+
+  const snapshot = readFileSync(storeFile, 'utf8')
+  assert.equal(snapshot.includes('expired body'), false)
+  assert.equal(snapshot.includes('old preview'), false)
 })

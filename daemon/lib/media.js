@@ -1,4 +1,4 @@
-import { createWriteStream, existsSync, renameSync, unlinkSync } from 'node:fs'
+import { createWriteStream, existsSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { downloadContentFromMessage } from 'baileys'
@@ -33,6 +33,28 @@ export function existingMediaPath(message) {
   if (message.imagePath && existsSync(message.imagePath)) return message.imagePath
   const guessed = mediaPathFor(message.id, message.media.mimetype)
   return existsSync(guessed) ? guessed : ''
+}
+
+export function pruneMediaCache(ttlDays, now = Date.now()) {
+  if (ttlDays === 0) return 0
+  const cutoff = now - ttlDays * 24 * 60 * 60 * 1000
+  let removed = 0
+
+  for (const entry of readdirSync(mediaDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue
+    const path = join(mediaDir, entry.name)
+    try {
+      if (statSync(path).mtimeMs < cutoff) {
+        unlinkSync(path)
+        removed += 1
+      }
+    } catch (err) {
+      if (err.code !== 'ENOENT') logger.warn({ err, path }, 'media: cache prune failed')
+    }
+  }
+
+  if (removed) logger.info({ removed }, 'media: expired cache pruned')
+  return removed
 }
 
 function toBuffer(value) {

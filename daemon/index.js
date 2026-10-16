@@ -20,7 +20,8 @@ import { scanAppState } from './lib/appstate.js'
 import { Notifier } from './lib/notify.js'
 import { Bus } from './lib/server.js'
 import { extractImage, isGroupJid, isIgnorableChat, isPhotoPlaceholder, isSilent, messageText, messageType, prettyJid } from './lib/message.js'
-import { existingMediaPath, MediaCache } from './lib/media.js'
+import { existingMediaPath, MediaCache, pruneMediaCache } from './lib/media.js'
+import { retentionDays } from './lib/retention.js'
 import {
   applyChatNotificationPreferences,
   isChatMuted,
@@ -47,6 +48,8 @@ const PAIRING_WINDOW_MS = Math.max(
 )
 const MAX_QR_PER_PAIRING = 32
 const PRINT_QR = process.env.OMARCHY_WHATSAPP_PRINT_QR === '1'
+const MEDIA_TTL_DAYS = retentionDays('OMARCHY_WHATSAPP_MEDIA_TTL_DAYS', 30)
+const CACHE_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 // Messages predating this run are backlog, not news: they were already
 // notified by the phone, so replaying them as toasts on every daemon start
@@ -1124,6 +1127,21 @@ function wipeAuth() {
   }
 }
 
+function pruneCaches() {
+  let storeChanged = store.pruneExpiredMessages()
+  if (pruneMediaCache(MEDIA_TTL_DAYS)) {
+    for (const [jid, list] of store.messages) {
+      for (const message of list) {
+        if (!message.imagePath || existingMediaPath(message)) continue
+        message.imagePath = ''
+        storeChanged = true
+        bus.broadcast({ t: 'messageMedia', jid, id: message.id, imagePath: '' })
+      }
+    }
+  }
+  if (storeChanged) store.markDirty()
+}
+
 // Mark a chat read on this device and across the account, then drop any toast
 // still waiting in the coalesce window.
 async function markRead(jid) {
@@ -1465,6 +1483,7 @@ async function main() {
   if (claimPid()) await sleep(1500)
   purgeStaleQrFiles()
   store.load()
+  pruneCaches()
   for (const chat of store.chats.values()) scheduleMuteExpiry(chat)
 
   media.getSocket = () => sock
@@ -1507,6 +1526,11 @@ async function main() {
     if (Date.now() - pairingStartedAt > PAIRING_WINDOW_MS) stopPairing()
   }, 5000)
   pairingWatchdog.unref?.()
+
+  const cachePruner = setInterval(() => {
+    pruneCaches()
+  }, CACHE_PRUNE_INTERVAL_MS)
+  cachePruner.unref?.()
 
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => shutdown(signal))
   process.on('uncaughtException', (err) => logger.error({ err }, 'uncaught exception'))
