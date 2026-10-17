@@ -219,3 +219,11 @@ test('load prunes expired messages and rewrites the snapshot', () => {
   assert.equal(snapshot.includes('expired body'), false)
   assert.equal(snapshot.includes('old preview'), false)
 })
+
+test('a name learned under a phone number resolves for its LID', () => {
+  const store = makeStore()
+  store.rememberPushName('972500000001@s.whatsapp.net', 'Dana')
+  store.alias('280543019172045@lid', '972500000001@s.whatsapp.net')
+
+  assert.equal(store.lookupName('280543019172045@lid'), 'Dana')
+})

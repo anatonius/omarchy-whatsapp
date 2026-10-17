@@ -15,7 +15,7 @@ import QRCode from 'qrcode'
 
 import { authDir, ensureDirs, mediaDir, pidFile, qrPngFileFor, qrTxtFile, socketPath, stateDir } from './lib/paths.js'
 import { logger, waLogger } from './lib/logger.js'
-import { Store, normalizeJid, pinRank } from './lib/store.js'
+import { Store, normalizeJid, pinRank, isPlaceholderName } from './lib/store.js'
 import { scanAppState } from './lib/appstate.js'
 import { Notifier } from './lib/notify.js'
 import { Bus } from './lib/server.js'
@@ -275,16 +275,32 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// Best known label for a sender: saved/push name, else the phone number behind
+// a LID when the alias is known, else the raw id.
+function labelForJid(jid) {
+  if (!jid) return ''
+  const name = store.lookupName(jid)
+  if (name) return name
+  const canonical = store.canonicalJid(jid)
+  if (canonical && canonical !== jid) {
+    return store.lookupName(canonical) || prettyJid(canonical)
+  }
+  return prettyJid(jid)
+}
+
 function senderNameFor(chatJid, message) {
   if (message.key?.fromMe) return store.me?.name || 'You'
   const participant = message.key?.participant || message.participant
   if (isGroupJid(chatJid) && participant) {
+    const pn = message.key?.participantPn || message.key?.participantAlt
+    if (String(participant).endsWith('@lid')) scheduleLidResolve(participant)
     return store.lookupName(participant)
-      || store.lookupName(message.key?.participantPn)
+      || store.lookupName(pn)
       || message.pushName
-      || prettyJid(participant)
+      || (pn && prettyJid(pn))
+      || labelForJid(participant)
   }
-  return store.lookupName(chatJid) || message.pushName || prettyJid(chatJid)
+  return store.lookupName(chatJid) || message.pushName || labelForJid(chatJid)
 }
 
 function learnAliasesFromMessage(raw) {
@@ -328,6 +344,11 @@ function isRecentIncoming(message) {
 function publicMessage(message) {
   if (!message) return message
   const { media: _ignored, retryMessage: _retryMessage, ...rest } = message
+  // Names learned after the message arrived (contact sync, LID resolution).
+  if (!rest.fromMe && isPlaceholderName(rest.senderName)) {
+    const label = labelForJid(rest.senderJid || rest.key?.participant || rest.key?.remoteJid)
+    if (label) rest.senderName = label
+  }
   return rest
 }
 
