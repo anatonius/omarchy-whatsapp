@@ -288,10 +288,15 @@ function labelForJid(jid) {
   return prettyJid(jid)
 }
 
+function senderJidOf(message) {
+  return message.key?.participant || message.participant || message.key?.participantAlt || ''
+}
+
 function senderNameFor(chatJid, message) {
   if (message.key?.fromMe) return store.me?.name || 'You'
-  const participant = message.key?.participant || message.participant
-  if (isGroupJid(chatJid) && participant) {
+  const participant = senderJidOf(message)
+  if (isGroupJid(chatJid)) {
+    if (!participant) return message.pushName || ''
     const pn = message.key?.participantPn || message.key?.participantAlt
     if (String(participant).endsWith('@lid')) scheduleLidResolve(participant)
     return store.lookupName(participant)
@@ -345,9 +350,14 @@ function publicMessage(message) {
   if (!message) return message
   const { media: _ignored, retryMessage: _retryMessage, ...rest } = message
   // Names learned after the message arrived (contact sync, LID resolution).
-  if (!rest.fromMe && isPlaceholderName(rest.senderName)) {
-    const label = labelForJid(rest.senderJid || rest.key?.participant || rest.key?.remoteJid)
-    if (label) rest.senderName = label
+  const chatJid = rest.key?.remoteJid
+  const inGroup = isGroupJid(chatJid)
+  const sender = rest.senderJid || rest.key?.participant
+  const showsGroupTitle = inGroup && rest.senderName
+    && rest.senderName === store.lookupName(chatJid)
+  if (!rest.fromMe && (isPlaceholderName(rest.senderName) || showsGroupTitle)) {
+    const label = sender ? labelForJid(sender) : (inGroup ? '' : labelForJid(chatJid))
+    if (label || showsGroupTitle) rest.senderName = label
   }
   return rest
 }
@@ -402,13 +412,13 @@ function flatten(chatJid, message) {
     text: image ? (image.caption || messageText(message.message)) : messageText(message.message),
     type: messageType(message.message),
     senderName: senderNameFor(chatJid, message),
-    senderJid: message.key?.participant ? jidNormalizedUser(message.key.participant) : '',
+    senderJid: senderJidOf(message) ? jidNormalizedUser(senderJidOf(message)) : '',
     status: asStatus(message.status),
     key: {
       remoteJid: message.key?.remoteJid || chatJid,
       id: message.key?.id || '',
       fromMe: !!message.key?.fromMe,
-      participant: message.key?.participant || undefined
+      participant: senderJidOf(message) || undefined
     }
   }
   if (image) {
